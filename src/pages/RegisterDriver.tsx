@@ -42,6 +42,8 @@ interface Question {
     accept?: string; // Para inputs de archivo
     multiple?: boolean; // Para inputs de archivo
     useCamera?: boolean; // Nueva propiedad para indicar si usa cámara
+    useMultiCamera?: boolean; // Para captura secuencial de múltiples fotos
+    cameraLabels?: string[]; // Labels para cada paso de la cámara secuencial
     sampleImage?: string; // ID o nombre de la imagen de ejemplo en el bucket
     onlyFor?: 'regular' | 'luxury'; // Filtro opcional por tipo de conductor
 }
@@ -148,6 +150,12 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
     const [validationError, setValidationError] = useState<string | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [isReferralLocked, setIsReferralLocked] = useState(false);
+
+    // --- ESTADOS MULTI-CÁMARA (Fotos del vehículo) ---
+    const [vehicleCameraPhotos, setVehicleCameraPhotos] = useState<(string | null)[]>([null, null, null, null]);
+    const [vehicleCameraStep, setVehicleCameraStep] = useState(0);
+    const [isVehicleCameraOpen, setIsVehicleCameraOpen] = useState(false);
+    const [vehicleCapturedPreview, setVehicleCapturedPreview] = useState<string | null>(null);
 
     // --- CONFIGURACIÓN DE PREGUNTAS ---
     const questions: Question[] = [
@@ -261,8 +269,19 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
             sampleImage: 'self-portrait.jpg'
         },
 
-        // 15b) Vehicle Photos
-        { id: 'vehiclePhotos', label: '4 pictures of all the views of the vehicle / 4 fotos del vehículo', type: 'file', accept: 'image/*', multiple: true, required: true, helper: 'Front, Back, Left Side, Right Side. Clean vehicle before taking pictures.', sampleImage: '4-pictures-vehicle.png' },
+        // 15b) Vehicle Photos (SEQUENTIAL CAMERA)
+        {
+            id: 'vehiclePhotos',
+            label: '4 pictures of all the views of the vehicle / 4 fotos del vehículo',
+            type: 'file',
+            accept: 'image/*',
+            multiple: true,
+            required: true,
+            useMultiCamera: true,
+            cameraLabels: ['Front / Frente', 'Back / Atrás', 'Left Side / Lado Izquierdo', 'Right Side / Lado Derecho'],
+            helper: 'Take or upload 4 photos: Front, Back, Left Side, Right Side. Clean vehicle before taking pictures.',
+            sampleImage: '4-pictures-vehicle.png'
+        },
 
         { id: 'additionalInfo', label: 'Additional information / Información adicional', type: 'text', required: false },
 
@@ -471,6 +490,87 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
         startCamera();
     };
 
+    // --- MULTI-CÁMARA LOGIC (Vehicle Photos) ---
+    const VEHICLE_PHOTO_LABELS = ['Front / Frente', 'Back / Atrás', 'Left Side / Lado Izquierdo', 'Right Side / Lado Derecho'];
+
+    const startVehicleCamera = async () => {
+        try {
+            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            setStream(mediaStream);
+            setIsVehicleCameraOpen(true);
+            setVehicleCapturedPreview(null);
+        } catch (err) {
+            console.error("Camera error:", err);
+            toast.error("Could not access camera. Please allow permissions.");
+        }
+    };
+
+    const captureVehiclePhoto = () => {
+        if (!videoRef.current || !canvasRef.current) return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const photoData = canvas.toDataURL('image/jpeg');
+        setVehicleCapturedPreview(photoData);
+        stopCamera();
+        setIsVehicleCameraOpen(false);
+    };
+
+    const confirmVehiclePhoto = () => {
+        if (!vehicleCapturedPreview) return;
+        const updated = [...vehicleCameraPhotos];
+        updated[vehicleCameraStep] = vehicleCapturedPreview;
+        setVehicleCameraPhotos(updated);
+        setVehicleCapturedPreview(null);
+
+        // Auto-advance to next empty slot
+        const nextEmpty = updated.findIndex((p, i) => i > vehicleCameraStep && !p);
+        if (nextEmpty !== -1) {
+            setVehicleCameraStep(nextEmpty);
+        } else {
+            // All filled, check if there's any empty slot at all
+            const anyEmpty = updated.findIndex(p => !p);
+            if (anyEmpty !== -1) {
+                setVehicleCameraStep(anyEmpty);
+            }
+            // If all 4 are filled, save to formData
+            if (updated.every(p => p !== null)) {
+                setFormData(prev => ({ ...prev, vehiclePhotos: updated }));
+                toast.success("All 4 vehicle photos captured!");
+            }
+        }
+    };
+
+    const retakeVehiclePhoto = (index: number) => {
+        setVehicleCameraStep(index);
+        setVehicleCapturedPreview(null);
+        // Clear that slot
+        const updated = [...vehicleCameraPhotos];
+        updated[index] = null;
+        setVehicleCameraPhotos(updated);
+        // Clear formData since we no longer have all 4
+        setFormData(prev => ({ ...prev, vehiclePhotos: undefined }));
+    };
+
+    const handleVehicleFileUpload = (file: File) => {
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error("File size exceeds 5MB limit.");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const imageData = event.target?.result as string;
+            setVehicleCapturedPreview(imageData);
+        };
+        reader.readAsDataURL(file);
+    };
+
     const handleNext = () => {
         const currentQ = filteredQuestions[currentQuestionIndex];
 
@@ -478,8 +578,17 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
         if (currentQ.required) {
             const val = formData[currentQ.id];
 
+            // Validación multi-cámara (vehicle photos)
+            if (currentQ.useMultiCamera) {
+                const allCaptured = vehicleCameraPhotos.every(p => p !== null);
+                if (!allCaptured) {
+                    const missing = vehicleCameraPhotos.filter(p => !p).length;
+                    toast.error(`Please capture all 4 vehicle photos. ${missing} remaining.`);
+                    return;
+                }
+            }
             // Validación específica para cámara
-            if (currentQ.useCamera) {
+            else if (currentQ.useCamera) {
                 if (!val && !capturedImage) {
                     toast.error("Please take a photo to continue");
                     return;
@@ -630,10 +739,18 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                 }
             }
 
-            // 4. ARCHIVOS MÚLTIPLES (Fotos del auto)
+            // 4. ARCHIVOS MÚLTIPLES (Fotos del auto) - Soporta base64 de cámara y FileList
             if (formData.vehiclePhotos && formData.vehiclePhotos.length > 0) {
                 for (let i = 0; i < formData.vehiclePhotos.length; i++) {
-                    formDataToSend.append("vehicle_photos", formData.vehiclePhotos[i]);
+                    const photo = formData.vehiclePhotos[i];
+                    if (typeof photo === 'string' && photo.startsWith('data:')) {
+                        // Base64 from camera -> convert to File
+                        const angleNames = ['front', 'back', 'left', 'right'];
+                        const file = dataURLtoFile(photo, `vehicle_${angleNames[i] || i}.jpg`);
+                        formDataToSend.append("vehicle_photos", file);
+                    } else {
+                        formDataToSend.append("vehicle_photos", photo);
+                    }
                 }
             }
 
@@ -735,9 +852,188 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
     );
 
     // RENDERIZADO DE INPUTS SEGÚN TIPO
-    const renderInput = () => {
+    const renderQuestionInput = (q: Question) => {
+        // --- MULTI-CÁMARA INPUT (Vehicle Photos) ---
+        if (q.useMultiCamera) {
+            const labels = q.cameraLabels || VEHICLE_PHOTO_LABELS;
+            const currentLabel = labels[vehicleCameraStep] || `Photo ${vehicleCameraStep + 1}`;
+            const capturedCount = vehicleCameraPhotos.filter(p => p !== null).length;
+            const allCaptured = capturedCount === 4;
+
+            return (
+                <div className="space-y-4">
+                    {/* Step Indicator */}
+                    <div className="text-center">
+                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${
+                            type === 'luxury' ? 'bg-accent/20 text-accent' : 'bg-primary/10 text-primary'
+                        }`}>
+                            📸 Photo {vehicleCameraStep + 1} of 4: {currentLabel}
+                        </div>
+                        <p className={`text-sm mt-2 ${type === 'luxury' ? 'text-muted' : 'text-muted-foreground'}`}>
+                            {capturedCount}/4 photos captured
+                        </p>
+                    </div>
+
+                    {/* Camera / Preview Area */}
+                    {!allCaptured || vehicleCapturedPreview ? (
+                        <div className="relative mx-auto w-full max-w-sm aspect-video bg-black rounded-xl overflow-hidden shadow-lg border-2 border-border">
+                            {/* Live Camera */}
+                            {isVehicleCameraOpen && !vehicleCapturedPreview && (
+                                <video
+                                    ref={setVideoRef}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    className="w-full h-full object-cover"
+                                />
+                            )}
+
+                            {/* Captured Preview */}
+                            {vehicleCapturedPreview && (
+                                <img src={vehicleCapturedPreview} alt="Captured" className="w-full h-full object-cover" />
+                            )}
+
+                            {/* Placeholder */}
+                            {!isVehicleCameraOpen && !vehicleCapturedPreview && (
+                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                                    <Camera className="w-12 h-12 mb-2 opacity-50" />
+                                    <p className="text-sm">Take photo: {currentLabel}</p>
+                                </div>
+                            )}
+
+                            <canvas ref={canvasRef} className="hidden" />
+                        </div>
+                    ) : null}
+
+                    {/* Controls */}
+                    <div className="flex flex-col gap-3 max-w-sm mx-auto">
+                        {/* Start Camera */}
+                        {!isVehicleCameraOpen && !vehicleCapturedPreview && !vehicleCameraPhotos[vehicleCameraStep] && (
+                            <>
+                                <Button onClick={startVehicleCamera} size="lg" className="w-full">
+                                    <Camera className="mr-2 w-5 h-5" /> Open Camera
+                                </Button>
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <span className="w-full border-t border-border" />
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className={`px-2 ${type === "luxury" ? "bg-foreground text-muted" : "bg-background text-muted-foreground"}`}>
+                                            Or
+                                        </span>
+                                    </div>
+                                </div>
+                                <label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="lg"
+                                        className={`w-full ${type === "luxury" ? "bg-transparent border-accent text-accent hover:bg-accent/10" : ""}`}
+                                        asChild
+                                    >
+                                        <span>
+                                            <Upload className="mr-2 w-5 h-5" /> Upload Image
+                                        </span>
+                                    </Button>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleVehicleFileUpload(file);
+                                        }}
+                                    />
+                                </label>
+                            </>
+                        )}
+
+                        {/* Capture Controls */}
+                        {isVehicleCameraOpen && (
+                            <div className="flex gap-2">
+                                <Button onClick={captureVehiclePhoto} size="lg" variant="default" className="flex-1 bg-white text-black hover:bg-gray-200">
+                                    <div className="w-4 h-4 rounded-full bg-red-500 mr-2 animate-pulse" /> Capture
+                                </Button>
+                                <Button onClick={() => { stopCamera(); setIsVehicleCameraOpen(false); }} size="lg" variant="destructive" className="flex-1">
+                                    <LogOut className="w-4 h-4 mr-2 rotate-180" /> Cancel
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Confirm / Retake Preview */}
+                        {vehicleCapturedPreview && (
+                            <div className="flex gap-2">
+                                <Button onClick={confirmVehiclePhoto} size="lg" className={`flex-1 ${type === 'luxury' ? 'bg-accent hover:bg-accent/90' : ''}`}>
+                                    <CheckCircle className="mr-2 w-4 h-4" /> Confirm
+                                </Button>
+                                <Button
+                                    onClick={() => { setVehicleCapturedPreview(null); startVehicleCamera(); }}
+                                    size="lg"
+                                    variant="outline"
+                                    className={`flex-1 ${type === "luxury" ? "bg-transparent border-accent text-accent hover:bg-accent/10" : ""}`}
+                                >
+                                    <RefreshCw className="mr-2 w-4 h-4" /> Retake
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Thumbnails Grid */}
+                    <div className="grid grid-cols-4 gap-3 max-w-sm mx-auto">
+                        {labels.map((label, index) => (
+                            <div
+                                key={index}
+                                onClick={() => {
+                                    if (vehicleCameraPhotos[index]) {
+                                        retakeVehiclePhoto(index);
+                                    } else {
+                                        setVehicleCameraStep(index);
+                                        setVehicleCapturedPreview(null);
+                                    }
+                                }}
+                                className={`relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                                    vehicleCameraStep === index && !allCaptured
+                                        ? (type === 'luxury' ? 'border-accent shadow-[0_0_10px_rgba(212,175,55,0.3)]' : 'border-primary shadow-md')
+                                        : vehicleCameraPhotos[index]
+                                            ? 'border-green-500'
+                                            : 'border-border opacity-60 hover:opacity-100'
+                                }`}
+                            >
+                                {vehicleCameraPhotos[index] ? (
+                                    <>
+                                        <img src={vehicleCameraPhotos[index]!} alt={label} className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <RefreshCw className="w-4 h-4 text-white" />
+                                        </div>
+                                        <div className="absolute top-1 right-1">
+                                            <CheckCircle className="w-4 h-4 text-green-400 drop-shadow" />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className={`flex flex-col items-center justify-center h-full ${type === 'luxury' ? 'bg-card/10' : 'bg-muted/50'}`}>
+                                        <Camera className="w-5 h-5 opacity-40" />
+                                    </div>
+                                )}
+                                <div className={`absolute bottom-0 left-0 right-0 text-center py-0.5 text-[10px] font-medium ${type === 'luxury' ? 'bg-black/70 text-white' : 'bg-black/60 text-white'}`}>
+                                    {label.split(' / ')[0]}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* All captured success message */}
+                    {allCaptured && (
+                        <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-lg text-green-500 flex items-center justify-center gap-2">
+                            <CheckCircle className="w-5 h-5" />
+                            <span className="text-sm font-medium">All 4 vehicle photos captured! Click any thumbnail to retake.</span>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
         // --- CÁMARA INPUT ---
-        if (currentQ.useCamera) {
+        if (q.useCamera) {
             return (
                 <div className="space-y-4 text-center">
                     <div className="relative mx-auto w-full max-w-sm aspect-square bg-black rounded-xl overflow-hidden shadow-lg border-2 border-border">
@@ -822,7 +1118,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                                         </span>
                                     </Button>
                                     <input
-                                        id={`file-upload-${currentQ.id}`}
+                                        id={`file-upload-${q.id}`}
                                         type="file"
                                         accept="image/*"
                                         className="hidden"
@@ -905,20 +1201,20 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
 
         let inputElement;
 
-        switch (currentQ.type) {
+        switch (q.type) {
             case 'select':
                 inputElement = (
                     <select
-                        name={currentQ.id}
-                        value={formData[currentQ.id] || ''}
-                        onChange={(e) => handleSelectChange(e.target.value, currentQ.id)}
+                        name={q.id}
+                        value={formData[q.id] || ''}
+                        onChange={(e) => handleSelectChange(e.target.value, q.id)}
                         className={`w-full p-4 rounded-md border text-lg ${type === 'luxury'
                             ? 'bg-card/10 border-muted-foreground/30 text-card'
                             : 'bg-background border-input text-foreground'
                             }`}
                     >
                         <option value="" className="text-gray-900 bg-white">Select an option...</option>
-                        {currentQ.options?.map(opt => (
+                        {q.options?.map(opt => (
                             <option key={opt.value} value={opt.value} className="text-gray-900 bg-white">{opt.label}</option>
                         ))}
                     </select>
@@ -928,20 +1224,20 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
             case 'radio':
                 inputElement = (
                     <div className="space-y-3">
-                        {currentQ.options?.map(opt => (
+                        {q.options?.map(opt => (
                             <label
                                 key={opt.value}
-                                className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all ${formData[currentQ.id] === opt.value
+                                className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all ${formData[q.id] === opt.value
                                     ? (type === 'luxury' ? 'bg-accent/20 border-accent' : 'bg-primary/10 border-primary')
                                     : (type === 'luxury' ? 'border-muted-foreground/30 hover:bg-white/5' : 'border-input hover:bg-gray-50')
                                     }`}
                             >
                                 <input
                                     type="radio"
-                                    name={currentQ.id}
+                                    name={q.id}
                                     value={opt.value}
-                                    checked={formData[currentQ.id] === opt.value}
-                                    onChange={() => handleRadioChange(opt.value, currentQ.id)}
+                                    checked={formData[q.id] === opt.value}
+                                    onChange={() => handleRadioChange(opt.value, q.id)}
                                     className="w-5 h-5 text-primary"
                                 />
                                 <span className={`text-lg ${type === 'luxury' ? 'text-card' : 'text-foreground'}`}>
@@ -965,32 +1261,32 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                                 </span>
                                 <input
                                     type="file"
-                                    name={currentQ.id}
-                                    accept={currentQ.accept}
-                                    multiple={currentQ.multiple}
+                                    name={q.id}
+                                    accept={q.accept}
+                                    multiple={q.multiple}
                                     onChange={handleFileChange}
                                     className="hidden"
                                 />
                             </label>
                             <p className="text-sm text-muted-foreground mt-2">
-                                {currentQ.multiple ? 'Supported files: Images, PDF. Max 10MB per file.' : 'Supported file: Image or PDF. Max 10MB.'}
+                                {q.multiple ? 'Supported files: Images, PDF. Max 10MB per file.' : 'Supported file: Image or PDF. Max 10MB.'}
                             </p>
                         </div>
 
                         {/* Previews */}
-                        {previewUrls[currentQ.id] && (
+                        {previewUrls[q.id] && (
                             <div className="flex gap-4 flex-wrap mt-4">
-                                {previewUrls[currentQ.id].map((url, idx) => (
+                                {previewUrls[q.id].map((url, idx) => (
                                     <div key={idx} className="relative w-24 h-24 rounded-lg overflow-hidden border border-border">
                                         <img src={url} alt="Preview" className="w-full h-full object-cover" />
                                     </div>
                                 ))}
                             </div>
                         )}
-                        {formData[currentQ.id] && (
+                        {formData[q.id] && (
                             <div className={`text-sm ${type === 'luxury' ? 'text-green-400' : 'text-green-600'} flex items-center gap-2`}>
                                 <CheckCircle className="w-4 h-4" />
-                                {formData[currentQ.id].length} file(s) selected
+                                {formData[q.id].length} file(s) selected
                             </div>
                         )}
                     </div>
@@ -1000,14 +1296,13 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
             default: // Text, Email, Tel, Number
                 inputElement = (
                     <Input
-                        autoFocus
-                        name={currentQ.id}
-                        type={currentQ.type}
-                        placeholder={currentQ.placeholder}
-                        value={formData[currentQ.id] || ''}
+                        name={q.id}
+                        type={q.type}
+                        placeholder={q.placeholder}
+                        value={formData[q.id] || ''}
                         onChange={handleInputChange}
-                        disabled={(currentQ.id === 'email' && !!formData.email && formData.email !== '') || (currentQ.id === 'referralCode' && isReferralLocked)}
-                        className={`text-lg p-6 ${type === "luxury" ? "bg-card/5 border-muted-foreground/30 text-card placeholder:text-muted" : ""} ${(currentQ.id === 'referralCode' && isReferralLocked) ? "opacity-60 cursor-not-allowed bg-gray-100/10" : ""}`}
+                        disabled={(q.id === 'email' && !!formData.email && formData.email !== '') || (q.id === 'referralCode' && isReferralLocked)}
+                        className={`text-lg p-6 ${type === "luxury" ? "bg-card/5 border-muted-foreground/30 text-card placeholder:text-muted" : ""} ${(q.id === 'referralCode' && isReferralLocked) ? "opacity-60 cursor-not-allowed bg-gray-100/10" : ""}`}
                     />
                 );
                 break;
@@ -1021,7 +1316,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                 {type === 'luxury' && (
                     <>
 
-                        {currentQ.id === 'vehicleClass' && formData.vehicleClass && (
+                        {q.id === 'vehicleClass' && formData.vehicleClass && (
                             <div className="mt-4 animate-in fade-in zoom-in-95 duration-500 text-center">
                                 <p className="text-sm text-muted-foreground mb-2">Vehicle Preview:</p>
                                 <div className="inline-block rounded-xl overflow-hidden border-2 border-accent bg-black/20 p-4">
@@ -1092,94 +1387,154 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
         );
     }
 
-    // 2. FORM
+    // 2. FORM (List Layout)
     if (step === 'form') {
+        const handleReviewAll = () => {
+            for (const q of filteredQuestions) {
+                if (!q.required) continue;
+                const val = formData[q.id];
+
+                if (q.useMultiCamera) {
+                    if (!vehicleCameraPhotos.every(p => p !== null)) {
+                        toast.error(`Please capture all 4 vehicle photos.`);
+                        return;
+                    }
+                } else if (q.useCamera) {
+                    if (!val && !capturedImage) {
+                        toast.error(`Please take a photo for: ${q.label.split(' / ')[0]}`);
+                        return;
+                    }
+                    if (type === 'luxury' && validationError) {
+                        toast.error("Formal wear verification failed. Please retake photo.");
+                        return;
+                    }
+                } else if (q.type === 'file') {
+                    if (!val || val.length === 0) {
+                        toast.error(`Please upload file(s) for: ${q.label.split(' / ')[0]}`);
+                        return;
+                    }
+                } else {
+                    if (!val) {
+                        toast.error(`Please answer: ${q.label.split(' / ')[0]}`);
+                        return;
+                    }
+                    if (q.id === 'fullName' && val.trim().length < 3) {
+                        toast.error("Full Name must be at least 3 characters long");
+                        return;
+                    }
+                    if (q.id === 'address' && val.trim().length < 10) {
+                        toast.error("Address must be at least 10 characters long");
+                        return;
+                    }
+                    if (q.type === 'email') {
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!emailRegex.test(val)) {
+                            toast.error("Please enter a valid email address");
+                            return;
+                        }
+                    }
+                    if (q.type === 'tel') {
+                        const digits = val.replace(/\D/g, '');
+                        if (digits.length < 10) {
+                            toast.error("Phone number must have at least 10 digits");
+                            return;
+                        }
+                    }
+                }
+            }
+            setStep('review');
+        };
+
+        const answeredCount = filteredQuestions.filter(q => {
+            if (q.useMultiCamera) return vehicleCameraPhotos.every(p => p !== null);
+            if (q.useCamera) return !!formData[q.id] || !!capturedImage;
+            return !!formData[q.id];
+        }).length;
+
         return (
             <div className={`min-h-screen flex flex-col relative overflow-hidden ${type === "luxury" ? "bg-foreground" : "bg-background"}`}>
                 <ParticlesBackground type={type} />
                 <Header />
-                <div className="flex-1 flex flex-col items-center justify-center p-4">
-                    <div className="w-full max-w-xl mb-8">
+                <div className="flex-1 py-8 px-4 relative z-10">
+                    <div className="max-w-2xl mx-auto space-y-6">
                         {/* Progress Bar */}
-                        <div className={`h-2 rounded-full overflow-hidden ${type === "luxury" ? "bg-white/10" : "bg-secondary"}`}>
-                            <div
-                                className={`h-full transition-all duration-300 ${type === "luxury" ? "bg-accent" : "bg-primary"}`}
-                                style={{ width: `${((currentQuestionIndex + 1) / filteredQuestions.length) * 100}%` }}
-                            />
-                        </div>
-                        <div className={`flex justify-between mt-2 text-sm ${type === "luxury" ? "text-muted" : "text-muted-foreground"}`}>
-                            <span>Question {currentQuestionIndex + 1} of {filteredQuestions.length}</span>
-                            <span>{Math.round(((currentQuestionIndex + 1) / filteredQuestions.length) * 100)}% Completed</span>
-                        </div>
-                    </div>
-
-                    <Card className={`w-full max-w-xl p-8 min-h-[400px] flex flex-col justify-between border-border shadow-2xl relative z-10 ${type === "luxury" ? "bg-[#1a1a1a] text-white border-white/10" : "bg-card"}`}>
-
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <div className="flex items-center gap-2 mb-4">
-                                <Label className={`text-2xl font-semibold block ${type === "luxury" ? "text-card" : "text-foreground"}`}>
-                                    {currentQ.label}
-                                </Label>
-
-                                {currentQ.sampleImage && (
-                                    <HoverCard openDelay={200}>
-                                        <HoverCardTrigger asChild>
-                                            <div className="cursor-help transition-all duration-300 hover:scale-110">
-                                                <div className="relative">
-                                                    <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
-                                                    <HelpCircle className={`w-6 h-6 relative z-10 ${type === 'luxury' ? 'text-accent' : 'text-primary'} drop-shadow-[0_0_8px_rgba(var(--primary),0.8)]`} />
-                                                </div>
-                                            </div>
-                                        </HoverCardTrigger>
-                                        <HoverCardContent className="w-80 p-2">
-                                            <div className="space-y-2">
-                                                <h4 className="text-sm font-semibold">Reference Image / Imagen de Referencia</h4>
-                                                <div className="aspect-video relative rounded-md overflow-hidden bg-muted">
-                                                    <img
-                                                        src={`${import.meta.env.VITE_STORAGE_URL}/documentation-examples/${currentQ.sampleImage}`}
-                                                        alt="Reference"
-                                                        className="object-cover w-full h-full"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=No+Image+Available';
-                                                        }}
-                                                    />
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">
-                                                    Please upload a document similar to this example.
-                                                </p>
-                                            </div>
-                                        </HoverCardContent>
-                                    </HoverCard>
-                                )}
+                        <div className="sticky top-0 z-20 py-3">
+                            <div className={`rounded-xl p-4 backdrop-blur-md ${type === "luxury" ? "bg-[#1a1a1a]/90 border border-white/10" : "bg-card/90 border border-border shadow-sm"}`}>
+                                <div className={`h-2 rounded-full overflow-hidden ${type === "luxury" ? "bg-white/10" : "bg-secondary"}`}>
+                                    <div
+                                        className={`h-full transition-all duration-300 ${type === "luxury" ? "bg-accent" : "bg-primary"}`}
+                                        style={{ width: `${(answeredCount / filteredQuestions.length) * 100}%` }}
+                                    />
+                                </div>
+                                <div className={`flex justify-between mt-2 text-sm ${type === "luxury" ? "text-muted" : "text-muted-foreground"}`}>
+                                    <span>{answeredCount} of {filteredQuestions.length} answered</span>
+                                    <span>{Math.round((answeredCount / filteredQuestions.length) * 100)}%</span>
+                                </div>
                             </div>
-
-                            {/* Renderizador dinámico de Inputs */}
-                            {renderInput()}
-
-                            {currentQ.helper && (
-                                <p className="text-sm text-muted-foreground mt-2">{currentQ.helper}</p>
-                            )}
                         </div>
 
-                        <div className="flex gap-4 mt-8 pt-8 border-t border-border">
+                        {/* All Questions */}
+                        {filteredQuestions.map((q, index) => (
+                            <Card
+                                key={q.id}
+                                className={`p-6 border-border shadow-lg ${type === "luxury" ? "bg-[#1a1a1a] text-white border-white/10" : "bg-card"}`}
+                            >
+                                <div className="space-y-4">
+                                    {/* Question Number + Label */}
+                                    <Label className={`text-lg font-semibold block ${type === "luxury" ? "text-card" : "text-foreground"}`}>
+                                        {index + 1}. {q.label}
+                                        {q.required && <span className="text-red-500 ml-1">*</span>}
+                                    </Label>
+
+                                    {/* Sample Image (inline, below label) */}
+                                    {q.sampleImage && (
+                                        <div className={`rounded-lg overflow-hidden border ${type === "luxury" ? "border-white/10" : "border-border"}`}>
+                                            <div className="aspect-video relative bg-muted">
+                                                <img
+                                                    src={`${import.meta.env.VITE_STORAGE_URL}/documentation-examples/${q.sampleImage}`}
+                                                    alt="Reference"
+                                                    className="object-contain w-full h-full"
+                                                    onError={(e) => {
+                                                        (e.target as HTMLImageElement).src = 'https://placehold.co/400x300?text=No+Image';
+                                                    }}
+                                                />
+                                            </div>
+                                            <p className={`text-xs py-2 px-3 ${type === "luxury" ? "text-muted bg-white/5" : "text-muted-foreground bg-muted/50"}`}>
+                                                📎 Reference image — upload a document similar to this example.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Input */}
+                                    {renderQuestionInput(q)}
+
+                                    {/* Helper */}
+                                    {q.helper && (
+                                        <p className={`text-sm ${type === "luxury" ? "text-muted" : "text-muted-foreground"}`}>{q.helper}</p>
+                                    )}
+                                </div>
+                            </Card>
+                        ))}
+
+                        {/* Footer Buttons */}
+                        <div className="flex gap-4 pb-8">
                             <Button
                                 variant="outline"
-                                onClick={handlePrevious}
-                                // Fix visibility for Luxury Mode Previous Button
+                                onClick={() => setStep('welcome')}
                                 className={`flex-1 ${type === "luxury" ? "bg-transparent border-accent text-accent hover:bg-accent/10" : ""}`}
                             >
-                                <ArrowLeft className="mr-2 w-4 h-4" /> Previous
+                                <ArrowLeft className="mr-2 w-4 h-4" /> Back
                             </Button>
                             <Button
-                                onClick={handleNext}
+                                onClick={handleReviewAll}
                                 className={`flex-1 ${type === "luxury" ? "bg-accent hover:bg-accent/90" : ""}`}
                             >
-                                {currentQuestionIndex === filteredQuestions.length - 1 ? 'Review Answers' : 'Next'} <ArrowRight className="ml-2 w-4 h-4" />
+                                Review Answers <ArrowRight className="ml-2 w-4 h-4" />
                             </Button>
                         </div>
-                    </Card>
-                </div >
-            </div >
+                    </div>
+                </div>
+            </div>
         );
     }
 
@@ -1210,7 +1565,11 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                                         </span>
                                         <span className={`md:col-span-2 font-medium break-all ${type === "luxury" ? "text-card" : "text-foreground"}`}>
                                             {/* Renderizar valor textual o indicador de archivo */}
-                                            {q.useCamera && formData[q.id] ? (
+                                            {q.useMultiCamera && formData[q.id] ? (
+                                                <div className="flex items-center gap-2 text-green-500">
+                                                    <Camera className="w-4 h-4" /> 4 photos captured
+                                                </div>
+                                            ) : q.useCamera && formData[q.id] ? (
                                                 <div className="flex items-center gap-2 text-green-500">
                                                     <Camera className="w-4 h-4" /> Photo Captured
                                                 </div>

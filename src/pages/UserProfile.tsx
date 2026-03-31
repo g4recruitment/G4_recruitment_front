@@ -139,7 +139,7 @@ const UserProfile = () => {
               <div className="flex items-center gap-4 mt-2">
                 <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full ${isLuxury ? "bg-accent text-accent-foreground" : "bg-secondary text-foreground"}`}>
                   {isLuxury ? <Crown className="w-4 h-4" /> : <Car className="w-4 h-4" />}
-                  <span className="text-sm font-medium capitalize">{profile?.status || "Active"}</span>
+                  <span className="text-sm font-medium capitalize">Uploaded Documents</span>
                 </div>
                 {application && (
                   <Button

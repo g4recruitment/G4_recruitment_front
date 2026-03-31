@@ -4,7 +4,7 @@ node_modules/
 # Llaves y Configuración (¡Muy importante para tu JSON de Google Vision!)
 .env
 .env.local
-*.json
+
 
 # Archivos de compilación
 .next/
