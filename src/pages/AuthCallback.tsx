@@ -6,6 +6,8 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { authService } from "@/services/auth.service";
+import { logger } from "@/lib/logger";
+import { resolvePostLoginRoute } from "@/lib/postLoginRoute";
 
 const AuthCallback = () => {
     const navigate = useNavigate();
@@ -37,7 +39,7 @@ const AuthCallback = () => {
 
             if (!hasCode && !hasToken) {
                 // No auth params? Maybe we already have a session?
-                console.log("No auth params found. Checking existing session...");
+                logger.log("No auth params found. Checking existing session...");
                 const { data: { session } } = await supabase.auth.getSession();
                 if (session) {
                     setStatus("Session found (Persisted)");
@@ -59,10 +61,6 @@ const AuthCallback = () => {
                     const params = new URLSearchParams(hash.substring(1)); // Remove #
                     const access_token = params.get("access_token");
                     const refresh_token = params.get("refresh_token");
-
-                    // Debug info
-                    const paramKeys = Array.from(params.keys()).join(", ");
-                    setDetails(`Keys found: ${paramKeys}`);
 
                     if (access_token) {
                         if (refresh_token) {
@@ -93,14 +91,14 @@ const AuthCallback = () => {
                         }
                     }
                 } catch (err: any) {
-                    console.error("Manual token processing failed:", err);
-                    setDetails(`Processing Exception: ${err.message}`);
+                    logger.error("Manual token processing failed:", err);
+                    setDetails("Could not process the sign-in response. Please try again.");
                 }
             }
 
             // Listen for the specific SIGNED_IN event that completes the exchange
             const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-                console.log("Callback Auth Event:", event);
+                logger.log("Callback Auth Event:", event);
 
                 if (event === 'SIGNED_IN' && session) {
                     setStatus("Exchange Successful!");
@@ -114,9 +112,9 @@ const AuthCallback = () => {
             const { data: { session }, error } = await supabase.auth.getSession();
 
             if (error) {
-                console.error("getSession error:", error);
+                logger.error("getSession error:", error);
                 setStatus("Error during exchange");
-                setDetails(error.message);
+                setDetails("Something went wrong while completing sign-in. Please try again.");
                 return;
             }
 
@@ -137,7 +135,7 @@ const AuthCallback = () => {
         const user = session.user;
         const pendingType = localStorage.getItem("pendingDriverType");
 
-        console.log("Redirecting user:", user.email, "Pending Type:", pendingType);
+        logger.log("Redirecting user:", user.email, "Pending Type:", pendingType);
         setStatus("Verifying user profile and role...");
 
         try {
@@ -147,7 +145,7 @@ const AuthCallback = () => {
             // --- AUTO APPLY REFERRAL ---
             const pendingReferral = localStorage.getItem("pending_referral");
             if (pendingReferral) {
-                console.log("⚙️ Auto-applying pending referral in callback:", pendingReferral);
+                logger.log("⚙️ Auto-applying pending referral in callback:", pendingReferral);
                 try {
                     await authService.applyReferral(pendingReferral);
                     toast.success(`✅ Linked to referrer: ${pendingReferral}`);
@@ -155,13 +153,13 @@ const AuthCallback = () => {
                 } catch (err: any) {
                     // Handle specific errors as in the user script
                     if (err.response?.status === 409) {
-                        console.log("User already has a referrer.");
+                        logger.log("User already has a referrer.");
                         localStorage.removeItem("pending_referral");
                     } else if (err.response?.status === 400 && err.response?.data?.message?.includes("yourself")) {
                         toast.error("⚠️ You cannot refer yourself.");
                         localStorage.removeItem("pending_referral");
                     } else {
-                        console.error("Auto-referral apply failed silently:", err);
+                        logger.error("Auto-referral apply failed silently:", err);
                     }
                 }
             }
@@ -170,38 +168,22 @@ const AuthCallback = () => {
             const isAdminLoginAttempt = localStorage.getItem("isAdminLoginAttempt") === "true";
             localStorage.removeItem("isAdminLoginAttempt");
 
-            // Enforcement for "Log in as Admin" button
-            if (isAdminLoginAttempt) {
-                if (response.role === 'admin') {
-                    console.log("Admin login success, redirecting to dashboard");
-                    toast.success("Welcome, Administrator");
-                    navigate("/admin");
-                } else {
-                    console.log("Non-admin user tried to log in as admin");
-                    toast.error("Only an admin can enter the dashboard");
-                    navigate("/profile");
-                }
-                return;
-            }
+            const decision = resolvePostLoginRoute({
+                role: response.role,
+                exists: response.exists,
+                isAdminLoginAttempt,
+                pendingType,
+            });
 
-            // Normal redirection logic
-            if (response.role === 'admin') {
-                console.log("Admin detected during normal login, redirecting to dashboard");
-                navigate("/admin");
-                return;
+            // AuthCallback has no selection screen, so fall back to /profile.
+            const path = decision.kind === "selectType" ? "/profile" : decision.path;
+            if (path.startsWith("/register")) localStorage.removeItem("pendingDriverType");
+            if (decision.kind === "navigate" && decision.toast) {
+                toast[decision.toast.type](decision.toast.message);
             }
-
-            if (pendingType) {
-                localStorage.removeItem("pendingDriverType");
-                navigate(pendingType === "luxury" ? "/register/luxury" : "/register/regular");
-            } else if (response.exists) {
-                navigate("/profile");
-            } else {
-                // If no profile exists and no pending type, go home or profile
-                navigate("/profile");
-            }
+            navigate(path);
         } catch (error) {
-            console.error("Redirection error:", error);
+            logger.error("Redirection error:", error);
             // Default fallback
             navigate("/profile");
         }

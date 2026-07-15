@@ -1,11 +1,12 @@
 
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 export const authService = {
     signInWithGoogle: async (redirectTo?: string) => {
         const referralCode = localStorage.getItem("pending_referral");
-        console.log("🔥 [Auth] Starting Google Sign In. Referral Code:", referralCode);
+        logger.log("🔥 [Auth] Starting Google Sign In. Referral Code:", referralCode);
 
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
@@ -32,10 +33,10 @@ export const authService = {
 
     checkUserExists: async () => {
         try {
-            console.log("Checking user existence via /user/me...");
+            logger.log("Checking user existence via /user/me...");
             const response = await api.get("/user/me");
 
-            console.log("API Response /user/me:", response.data);
+            logger.log("API Response /user/me:", response.data);
 
             // Extract info
             const role = response.data.role || 'driver'; // Default to driver if missing
@@ -49,7 +50,7 @@ export const authService = {
                 role: role
             };
         } catch (error: any) {
-            console.error("API Error /user/me:", error);
+            logger.error("API Error /user/me:", error);
             // ONLY treat 404 as "User does not exist" (= needs registration)
             // Any other error (500, network, timeout) should be THROWN so the UI handles it
             if (error.response?.status === 404) {
@@ -61,12 +62,12 @@ export const authService = {
 
     applyReferral: async (code: string) => {
         try {
-            console.log("⚙️ Auto-applying pending referral:", code);
+            logger.log("⚙️ Auto-applying pending referral:", code);
             const response = await api.put("/user/profile", { referral_code: code });
-            console.log("✅ Referral API Response:", response.data);
+            logger.log("✅ Referral API Response:", response.data);
             return response.data;
         } catch (error: any) {
-            console.error("Auto-referral failed:", error.response?.data || error.message);
+            logger.error("Auto-referral failed:", error.response?.data || error.message);
             throw error;
         }
     }

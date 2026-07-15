@@ -45,7 +45,7 @@ export interface DriverApplication {
     vehicle_photos_urls: string[];
     status: string;
     created_at: string;
-    additional_info?: any;
+    additional_info?: unknown;
 }
 
 export interface UserDashboard {

@@ -1,64 +1,51 @@
+import { api } from "@/lib/api";
+import { AxiosError } from "axios";
 
-import { supabase } from "@/lib/supabase";
+export interface ValidateDocumentRequest {
+    docType: 'driverLicense' | 'tlcLicense' | 'carRegistration' | 'vehicleInspection' | 'tlcDiamond' | 'insuranceFiles';
+    file: string;       // base64, may include data URL prefix
+    mimeType: string;
+    expectedName: string;
+    expectedPlate: string;
+}
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+export interface ValidateDocumentResult {
+    valid: boolean;
+    extractedPlate: string;
+    errorCode: 'WRONG_DOC_TYPE' | 'NAME_MISMATCH' | 'PLATE_MISMATCH' | 'EXPIRED' | 'UNREADABLE' | '';
+    errorMessage: string;
+}
+
+// Maps transport-level failures to the sentinel error messages the UI expects.
+// Preserves the previous fetch-based behavior (rate limit / payload size) while
+// going through the shared axios instance (auth header + global 401 handling).
+const toVisionError = (err: unknown): Error => {
+    if (err instanceof AxiosError) {
+        if (err.response?.status === 429) return new Error('RATE_LIMIT_EXCEEDED');
+        if (err.response?.status === 413) return new Error('FILE_TOO_LARGE');
+        const data = err.response?.data;
+        const msg = typeof data === 'string' ? data : data?.message;
+        return new Error(msg || 'Server error');
+    }
+    return err instanceof Error ? err : new Error('Server error');
+};
 
 export const visionService = {
-    /**
-     * Sends image to backend for analysis using Google Vision API.
-     * @param base64Image Image in base64 format
-     * @returns Object containing formal wear validation result and detected labels
-     */
     analyzeImage: async (base64Image: string): Promise<{ isFormal: boolean; labels: string[] }> => {
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token;
-
-            if (!token) {
-                console.warn("No auth token found");
-                // Fallback for dev/testing if needed, or throw
-            }
-
-            const response = await fetch(`${API_URL}/api/drivers/validate-photo`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ image: base64Image })
-            });
-
-            if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error("RATE_LIMIT_EXCEEDED");
-                }
-                if (response.status === 413) {
-                    throw new Error("FILE_TOO_LARGE");
-                }
-                const errorText = await response.text();
-                throw new Error(errorText || "Server error");
-            }
-
-            const data = await response.json();
-            // Expected data: { is_formal: boolean, labels: string[] }
-
-            return {
-                isFormal: data.is_formal,
-                labels: data.labels || []
-            };
-
-        } catch (error) {
-            console.error("Vision API Error:", error);
-            throw error;
+            const { data } = await api.post('/drivers/validate-photo', { image: base64Image });
+            return { isFormal: data.is_formal, labels: data.labels || [] };
+        } catch (err) {
+            throw toVisionError(err);
         }
     },
 
-    /**
-     * @deprecated Validation is now performed on the backend. 
-     * This helper is kept compatibility or client-side double-check if needed.
-     */
-    validateFormalWear: (labels: string[]): boolean => {
-        // This is now redundant as analyzeImage returns the definitive boolean
-        return true;
-    }
+    validateDocument: async (req: ValidateDocumentRequest): Promise<ValidateDocumentResult> => {
+        try {
+            const { data } = await api.post('/drivers/validate-document', req);
+            return data;
+        } catch (err) {
+            throw toVisionError(err);
+        }
+    },
 };

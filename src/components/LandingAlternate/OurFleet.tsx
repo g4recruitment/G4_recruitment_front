@@ -1,54 +1,40 @@
 import { motion } from 'framer-motion';
+import { ASSETS } from '@/lib/assets';
 
-// Sourced from public-resources/our-fleet
-const FLEET_IMAGES = [
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.01.jpeg",
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.02.jpeg",
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.03.jpeg",
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.04.jpeg",
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.03%20(1).jpeg",
-    "https://xhcxkvwrjcnioopultzq.supabase.co/storage/v1/object/public/public-resources/our-fleet/WhatsApp%20Image%202026-01-21%20at%2015.56.03%20(2).jpeg"
-];
-
-// Double for seamless loop
-const MARQUEE_ITEMS = [...FLEET_IMAGES, ...FLEET_IMAGES];
+const MARQUEE_ITEMS = [...ASSETS.fleet, ...ASSETS.fleet];
 
 export const OurFleet = () => {
     return (
-        // Updated container: rounded-3xl, full border, consistent with request
-        <div className="w-full py-10 md:py-20 overflow-hidden relative border border-white/10 bg-neutral-900/30 backdrop-blur-sm rounded-3xl mx-auto my-8 max-w-[95%]">
-            {/* Removed font-serif to match page typography */}
-            <h3 className="text-3xl font-bold text-center text-[#D4AF37] mb-8 md:mb-16 uppercase tracking-widest">
+        <div className="w-full py-8 md:py-16 overflow-hidden relative border border-white/8 bg-neutral-900/30 backdrop-blur-sm rounded-2xl md:rounded-3xl mx-auto my-6 md:my-8 max-w-[95%]">
+
+            <h3 className="text-lg md:text-2xl font-bold text-center text-[#D4AF37] mb-6 md:mb-12 uppercase tracking-[0.25em]">
                 Our Exclusive Fleet
             </h3>
 
-            {/* Gradient Masks - Updated to respect rounded corners */}
-            <div className="absolute top-0 left-0 w-8 md:w-32 h-full bg-gradient-to-r from-black via-black/80 to-transparent z-10 pointer-events-none rounded-l-3xl" />
-            <div className="absolute top-0 right-0 w-8 md:w-32 h-full bg-gradient-to-l from-black via-black/80 to-transparent z-10 pointer-events-none rounded-r-3xl" />
+            {/* Gradient fade masks */}
+            <div className="absolute top-0 left-0 w-8 md:w-28 h-full bg-gradient-to-r from-black/90 to-transparent z-10 pointer-events-none" />
+            <div className="absolute top-0 right-0 w-8 md:w-28 h-full bg-gradient-to-l from-black/90 to-transparent z-10 pointer-events-none" />
 
             <motion.div
-                className="flex gap-10 w-max px-4"
-                animate={{ x: ["0%", "-50%"] }}
+                className="flex gap-4 md:gap-8 w-max px-4"
+                animate={{ x: ['0%', '-50%'] }}
                 transition={{
-                    duration: 35,
-                    ease: "linear",
-                    repeat: Infinity
+                    duration: 30,
+                    ease: 'linear',
+                    repeat: Infinity,
                 }}
             >
                 {MARQUEE_ITEMS.map((src, idx) => (
                     <div
                         key={idx}
-                        // Reduced size to w-56 (14rem) and h-72 (18rem) on mobile, w-64/h-80 on md+
-                        // Using standard rounded-2xl to ensure border radius works reliably
-                        className="relative w-56 h-72 md:w-64 md:h-80 overflow-hidden rounded-2xl border border-white/10 shadow-2xl shrink-0 group bg-neutral-900"
+                        className="relative w-44 h-60 md:w-60 md:h-76 overflow-hidden rounded-xl md:rounded-2xl border border-white/8 shadow-xl shrink-0 group bg-neutral-900"
                     >
                         <img
                             src={src}
                             alt="G4 Fleet Vehicle"
-                            className="w-full h-full object-cover transform transition-transform duration-700 opacity-90 group-hover:opacity-100 grayscale hover:grayscale-0 group-hover:scale-105"
+                            className="w-full h-full object-cover transition-all duration-700 opacity-80 group-hover:opacity-100 grayscale group-hover:grayscale-0 group-hover:scale-105"
                         />
-                        {/* Border overlay matches the new rounded corners */}
-                        <div className="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-2xl pointer-events-none" />
+                        <div className="absolute inset-0 ring-1 ring-inset ring-white/8 rounded-xl md:rounded-2xl pointer-events-none" />
                     </div>
                 ))}
             </motion.div>

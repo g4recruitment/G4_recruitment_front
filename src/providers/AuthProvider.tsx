@@ -4,6 +4,7 @@ import { Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 interface AuthContextType {
     session: Session | null;
@@ -26,7 +27,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 const { data: { session: initialSession } } = await supabase.auth.getSession();
                 setSession(initialSession);
             } catch (error) {
-                console.error("Error checking session:", error);
+                logger.error("Error checking session:", error);
             } finally {
                 setIsLoading(false);
             }
@@ -36,7 +37,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         // 2. Listen to Supabase Auth Changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, currentSession) => {
-            console.log("🔔 [Auth] State Change:", event);
+            logger.log("🔔 [Auth] State Change:", event);
 
             if (event === 'SIGNED_OUT') {
                 setSession(null);
@@ -53,13 +54,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         // 3. Listen to Custom "401" Unauthorized Events from API Interceptor
         const handleUnauthorized = async () => {
-            console.warn("⚠️ [Auth] Received 401 Unauthorized event. Logging out...");
+            logger.warn("⚠️ [Auth] Received 401 Unauthorized event. Logging out...");
             toast.error("Session expired. Please log in again.");
 
             try {
                 await supabase.auth.signOut();
             } catch (err) {
-                console.error("Error during auto-logout:", err);
+                logger.error("Error during auto-logout:", err);
             } finally {
                 // Force local cleanup
                 setSession(null);
@@ -81,7 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
             await supabase.auth.signOut();
         } catch (error) {
-            console.error("Error signing out:", error);
+            logger.error("Error signing out:", error);
         } finally {
             // Force local cleanup regardless of server response
             setSession(null);

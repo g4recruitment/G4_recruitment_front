@@ -50,7 +50,7 @@ export interface UserApplicationDetails {
     insurance_files_urls: string[];
     profile_photo_url: string;
     vehicle_photos_urls: string[];
-    additional_info: any;
+    additional_info: unknown;
     status: string;
     created_at: string;
 }

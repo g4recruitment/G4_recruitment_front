@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ASSETS } from '@/lib/assets';
 
 const STOCK_IMAGES = [
-    "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?q=80&w=2070&auto=format&fit=crop" // Driver POV
+    ASSETS.heroDriverPov, // Driver POV
 ];
 
 export const HeroSlider = () => {

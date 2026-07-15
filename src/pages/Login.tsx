@@ -1,138 +1,99 @@
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { authService } from "@/services/auth.service";
 import { useSearchParams } from "react-router-dom";
-import g4Logo from "@/assets/g4-logo.jpg";
-import { Chrome, Loader2 } from "lucide-react";
-import { ParticlesBackground } from "@/components/ParticlesBackground";
+import { Loader2, ArrowLeft, Crown, Car } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { motion, AnimatePresence } from "framer-motion";
+import { ASSETS } from "@/lib/assets";
+import { resolvePostLoginRoute } from "@/lib/postLoginRoute";
+import { logger } from "@/lib/logger";
+import type { Session } from "@supabase/supabase-js";
+
+const BG_IMAGE = ASSETS.heroDriverPov;
+const G4_LOGO = ASSETS.logoGold;
+
+const GoogleIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.657 13.075 17.64 11.273 17.64 9.2z" />
+        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+        <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.039l3.007-2.332z" />
+        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" />
+    </svg>
+);
+
+const panelVariants = {
+    initial: { opacity: 0, y: 16, scale: 0.98 },
+    animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } },
+    exit: { opacity: 0, y: -10, scale: 0.98, transition: { duration: 0.25 } },
+};
 
 const Login = () => {
     const [searchParams] = useSearchParams();
-    // Prioritize URL param, fallback to localStorage (for post-OAuth return)
     const urlType = searchParams.get("type");
     const storedType = localStorage.getItem("pendingDriverType");
     const driverType = urlType || storedType;
 
     const navigate = useNavigate();
     const [isLoading, setIsLoading] = useState(false);
-
-    // View state: 'selection' (choose type) | 'login' (google button)
-    // If we have a type, we default to 'login' mode. If not, 'selection'.
     const [viewMode, setViewMode] = useState<"selection" | "login">(driverType ? "login" : "selection");
 
-    // Force update view mode if URL changes
     useEffect(() => {
         if (driverType) setViewMode("login");
     }, [driverType]);
 
     useEffect(() => {
-        const checkUserAndRedirect = async (session: any) => {
-            console.log("🔥 [Login] Checking user logic started. Session email:", session?.user?.email);
+        const checkUserAndRedirect = async (session: Session | { user?: { email?: string } } | null) => {
             if (session?.user?.email) {
                 setIsLoading(true);
                 try {
-                    // Check if user exists (now calls /user/me, no email arg needed)
-                    console.log("🔥 [Login] Calling checkUserExists()...");
                     const { exists, role } = await authService.checkUserExists();
-                    console.log("🔥 [Login] checkUserExists result:", { exists, role });
 
                     const isAdminLoginAttempt = localStorage.getItem("isAdminLoginAttempt") === "true";
                     localStorage.removeItem("isAdminLoginAttempt");
 
-                    // 1. Enforcement for "Log in as Admin" button
-                    if (isAdminLoginAttempt) {
-                        if (role === 'admin') {
-                            console.log("🔥 [Login] Admin login success -> Redirecting to /admin");
-                            toast.success("Welcome Administrator");
-                            navigate("/admin");
-                        } else {
-                            console.log("🔥 [Login] Non-admin user tried to log in as admin");
-                            toast.error("Only an admin can enter the dashboard");
-                            navigate("/profile");
-                        }
+                    const decision = resolvePostLoginRoute({ role, exists, isAdminLoginAttempt, pendingType: driverType });
+
+                    if (decision.kind === "selectType") {
+                        if (decision.toast) toast[decision.toast.type](decision.toast.message);
+                        setViewMode("selection");
                         return;
                     }
 
-                    // 2. Normal check for ADMIN role
-                    if (role === 'admin') {
-                        console.log("🔥 [Login] Decision: Role is ADMIN -> Redirecting to /admin");
-                        navigate("/admin");
-                        return;
-                    }
-
-                    // 3. Check for Driver Application
-                    if (exists) {
-                        console.log("🔥 [Login] Decision: Driver Application FOUND -> Redirecting to /profile");
-                        navigate("/profile");
-                    } else {
-                        // 4. New User / Pending Registration
-                        console.log("🔥 [Login] Decision: Driver Application MISSING");
-
-                        if (driverType) {
-                            console.log("🔥 [Login] Pending Driver Type found:", driverType);
-                            const targetRoute = driverType === "luxury" ? "/register/luxury" : "/register/regular";
-                            console.log("🔥 [Login] Final Destination:", targetRoute);
-                            // Clean up storage
-                            localStorage.removeItem("pendingDriverType");
-                            navigate(targetRoute);
-                        } else {
-                            // 5. New User BUT no driver type selected (Generic Login)
-                            // They are authenticated but have no profile and no intention selected.
-                            // We should prompt them to select.
-                            console.log("🔥 [Login] No driver type selected. Staying on selection screen.");
-                            toast.info("Account verified! Please select a driver type to continue.");
-                            setViewMode("selection");
-                        }
-                    }
+                    if (decision.path.startsWith("/register")) localStorage.removeItem("pendingDriverType");
+                    if (decision.toast) toast[decision.toast.type](decision.toast.message);
+                    navigate(decision.path);
                 } catch (err) {
-                    console.error("🔥 [Login] Error in checkUserAndRedirect:", err);
-                    toast.error("Error verifying account status. See console.");
+                    logger.error(err);
+                    toast.error("Error verifying account status.");
                 } finally {
                     setIsLoading(false);
                 }
             }
         };
 
-        // Subscription to auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log("Auth State Change:", event, session?.user?.email);
-            if (session) {
-                checkUserAndRedirect(session);
-            }
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+            if (session) checkUserAndRedirect(session);
         });
 
-        // Initial session check
         supabase.auth.getSession().then(({ data: { session } }) => {
-            console.log("Initial Session Check:", session?.user?.email);
             if (session) {
                 checkUserAndRedirect(session);
             } else {
-                // Fallback: Check for hash tokens if auto-detect failed
                 const hash = window.location.hash;
                 if (hash && hash.includes("access_token")) {
-                    console.log("🔥 [Login] No session but hash found. Attempting manual recovery...");
-
                     try {
                         const params = new URLSearchParams(hash.substring(1));
                         const access_token = params.get("access_token");
                         const refresh_token = params.get("refresh_token");
-
                         if (access_token && refresh_token) {
                             supabase.auth.setSession({ access_token, refresh_token }).then(({ data, error }) => {
-                                if (!error && data.session) {
-                                    console.log("🔥 [Login] Manual recovery success!");
-                                    checkUserAndRedirect(data.session);
-                                } else {
-                                    console.error("🔥 [Login] Manual recovery failed:", error);
-                                }
+                                if (!error && data.session) checkUserAndRedirect(data.session);
                             });
                         }
                     } catch (e) {
-                        console.error("Hash parsing error:", e);
+                        logger.error("Hash parsing error:", e);
                     }
                 }
             }
@@ -143,166 +104,250 @@ const Login = () => {
 
     const handleGoogleLogin = async () => {
         try {
-            // Save type to localStorage before leaving for Google
-            if (driverType) {
-                localStorage.setItem("pendingDriverType", driverType);
-            }
-
-            console.log("🔥 [Login] Starting Google Auth with default callback...");
+            if (driverType) localStorage.setItem("pendingDriverType", driverType);
             await authService.signInWithGoogle();
-        } catch (error) {
+        } catch {
             toast.error("Error signing in with Google");
-            console.error(error);
         }
     };
 
-    // Handler for selection buttons.
-    // If not logged in -> Redirect to login with type (which sets viewMode=login)
-    // If logged in (e.g. generic login flow waiting for selection) -> Redirect to Register
     const handleSelection = async (type: "regular" | "luxury") => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-            // User is already auth'd, just needs to register
             navigate(type === "luxury" ? "/register/luxury" : "/register/regular");
         } else {
-            // User needs to login first with this context
             navigate(`/login?type=${type}`);
         }
-    }
+    };
+
+    const isLuxury = driverType === "luxury";
 
     return (
-        <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
-            <ParticlesBackground type={(driverType as "luxury" | "regular") || "regular"} />
+        <div className="min-h-[100dvh] bg-zinc-950 flex items-center justify-center p-4 relative overflow-hidden">
 
-            {viewMode === "selection" ? (
-                // SELECTION MODE
-                <Card className="w-full max-w-2xl p-8 bg-card border-border shadow-2xl relative z-10">
-                    <div className="text-center mb-8">
-                        <img src={g4Logo} alt="G4 Car Service" className="h-12 mx-auto mb-6 rounded-lg" />
-                        <h1 className="text-2xl font-bold text-foreground mb-2">Choose your Path</h1>
-                        <p className="text-muted-foreground">
-                            Select the type of driver you want to be
-                        </p>
-                    </div>
+            {/* Background image */}
+            <div className="absolute inset-0 z-0">
+                <img
+                    src={BG_IMAGE}
+                    alt=""
+                    className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-zinc-950/65" />
+                {isLuxury && (
+                    <div className="absolute inset-0 bg-[#D4AF37]/6" />
+                )}
+                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-zinc-950 to-transparent" />
+            </div>
 
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <Button
-                            variant="outline"
-                            className="h-auto py-8 flex flex-col gap-4 hover:border-success hover:bg-success/5 hover:text-foreground transition-all"
-                            onClick={() => handleSelection("regular")}
-                        >
-                            <div className="p-3 rounded-full bg-success/10 text-success">
-                                <Chrome className="w-6 h-6" />
-                            </div>
-                            <div className="text-center">
-                                <h3 className="font-bold text-lg mb-1">Standard Driver</h3>
-                                <p className="text-sm text-muted-foreground">Own vehicle, flexible hours</p>
-                            </div>
-                        </Button>
+            {/* Back to home */}
+            <button
+                onClick={() => navigate("/")}
+                className="absolute top-5 left-5 z-20 flex items-center gap-1.5 text-white/40 hover:text-white/80 text-sm transition-colors duration-200"
+            >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+            </button>
 
-                        <Button
-                            variant="outline"
-                            className="h-auto py-8 flex flex-col gap-4 hover:border-accent hover:bg-accent/5 hover:text-foreground transition-all"
-                            onClick={() => handleSelection("luxury")}
-                        >
-                            <div className="p-3 rounded-full bg-accent/10 text-accent">
-                                <Chrome className="w-6 h-6" />
-                            </div>
-                            <div className="text-center">
-                                <h3 className="font-bold text-lg mb-1">Luxury Driver</h3>
-                                <p className="text-sm text-muted-foreground">Premium fleet, higher rates</p>
-                            </div>
-                        </Button>
-                    </div>
+            <AnimatePresence mode="wait">
 
-                    <div className="mt-8 flex flex-col gap-3 items-center">
-                        <div className="relative w-full max-w-xs">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t border-border" />
+                {viewMode === "selection" ? (
+                    /* ── SELECTION MODE ── */
+                    <motion.div
+                        key="selection"
+                        variants={panelVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="relative z-10 w-full max-w-lg"
+                    >
+                        <div className="bg-black/50 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.6)] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]">
+
+                            {/* Logo */}
+                            <div className="flex justify-center mb-7">
+                                <img src={G4_LOGO} alt="G4 Car Services" className="h-8 w-auto object-contain" />
                             </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-card px-2 text-muted-foreground">
-                                    Already a member?
+
+                            {/* Header */}
+                            <div className="text-center mb-8">
+                                <h1 className="text-2xl font-bold text-white mb-2 tracking-tight">
+                                    Join G4 Car Services
+                                </h1>
+                                <p className="text-gray-400 text-sm">
+                                    Select your driver category to begin the application
+                                </p>
+                            </div>
+
+                            {/* Driver type cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-7">
+                                {/* Luxury */}
+                                <button
+                                    onClick={() => handleSelection("luxury")}
+                                    className="group relative text-left p-5 rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 hover:border-[#D4AF37]/70 hover:bg-[#D4AF37]/10 transition-all duration-300 overflow-hidden"
+                                >
+                                    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#D4AF37]/60 to-transparent opacity-60 group-hover:opacity-100 transition-opacity" />
+                                    <div className="mb-3">
+                                        <div className="w-9 h-9 rounded-full bg-[#D4AF37]/15 flex items-center justify-center mb-3">
+                                            <Crown className="w-4 h-4 text-[#D4AF37]" />
+                                        </div>
+                                        <img
+                                            src={ASSETS.carEscalade}
+                                            alt="Luxury Escalade"
+                                            className="w-full h-20 object-contain drop-shadow-lg group-hover:scale-105 transition-transform duration-500"
+                                        />
+                                    </div>
+                                    <p className="font-bold text-white text-sm mb-0.5">Luxury Driver</p>
+                                    <p className="text-[10px] text-[#D4AF37]/70 uppercase tracking-widest">Premium fleet</p>
+                                </button>
+
+                                {/* Standard */}
+                                <button
+                                    onClick={() => handleSelection("regular")}
+                                    className="group relative text-left p-5 rounded-xl border border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/8 transition-all duration-300 overflow-hidden"
+                                >
+                                    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                    <div className="mb-3">
+                                        <div className="w-9 h-9 rounded-full bg-white/8 flex items-center justify-center mb-3">
+                                            <Car className="w-4 h-4 text-gray-300" />
+                                        </div>
+                                        <img
+                                            src={ASSETS.carCorolla}
+                                            alt="Standard Sedan"
+                                            className="w-full h-20 object-contain grayscale group-hover:grayscale-0 group-hover:scale-105 transition-all duration-500"
+                                        />
+                                    </div>
+                                    <p className="font-bold text-white text-sm mb-0.5">Standard Driver</p>
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-widest">Your vehicle</p>
+                                </button>
+                            </div>
+
+                            {/* Divider */}
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="flex-1 border-t border-white/8" />
+                                <span className="text-[11px] text-gray-600 uppercase tracking-wider shrink-0">
+                                    Already registered
                                 </span>
+                                <div className="flex-1 border-t border-white/8" />
                             </div>
-                        </div>
-                        <Button
-                            onClick={() => setViewMode("login")}
-                            variant="ghost"
-                            className="text-primary hover:text-primary/80 font-medium"
-                        >
-                            Sign In to your account
-                        </Button>
 
-                        <Button
-                            variant="link"
-                            className="text-muted-foreground text-xs"
-                            onClick={() => navigate("/")}
-                        >
-                            Back to Home
-                        </Button>
-                    </div>
-                </Card>
-            ) : (
-                // LOGIN MODE
-                <Card className="w-full max-w-md p-8 bg-card border-border shadow-2xl relative z-10">
-                    <div className="text-center mb-8">
-                        <img src={g4Logo} alt="G4 Car Service" className="h-12 mx-auto mb-6 rounded-lg" />
-                        <h1 className="text-2xl font-bold text-foreground mb-2">
-                            {driverType ? "Welcome" : "Welcome Back"}
-                        </h1>
-                        <p className="text-muted-foreground">
-                            {driverType
-                                ? <span>Sign in to continue as a <span className="capitalize font-medium text-foreground">{driverType}</span> driver</span>
-                                : "Sign in to access your dashboard"}
-                        </p>
-                    </div>
-
-                    <div className="space-y-4">
-                        <Button
-                            onClick={handleGoogleLogin}
-                            disabled={isLoading}
-                            className="w-full h-12 text-base font-medium flex items-center justify-center gap-2 bg-white text-black hover:bg-gray-100 border border-gray-200"
-                        >
-                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Chrome className="w-5 h-5" />}
-                            {isLoading ? "Checking account..." : "Continue with Google"}
-                        </Button>
-
-                        <div className="relative my-6">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t border-border" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-card px-2 text-muted-foreground">
-                                    Secure Authentication
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-center gap-4">
-                            <Button
-                                variant="link"
-                                size="sm"
-                                className="text-muted-foreground text-xs"
-                                onClick={() => {
-                                    if (driverType) {
-                                        // Clear URL param if present
-                                        navigate("/login");
-                                    } else {
-                                        setViewMode("selection");
-                                    }
-                                }}
+                            <button
+                                onClick={() => setViewMode("login")}
+                                className="w-full py-2.5 text-sm text-[#D4AF37]/80 hover:text-[#D4AF37] transition-colors duration-200 font-medium"
                             >
-                                {driverType ? "Change Driver Type" : "Register as new driver"}
-                            </Button>
+                                Sign in to your account
+                            </button>
                         </div>
+                    </motion.div>
 
-                        <p className="text-center text-sm text-muted-foreground">
-                            By continuing, you agree to our Terms of Service and Privacy Policy.
-                        </p>
-                    </div>
-                </Card>
-            )}
+                ) : (
+                    /* ── LOGIN MODE ── */
+                    <motion.div
+                        key="login"
+                        variants={panelVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        className="relative z-10 w-full max-w-sm"
+                    >
+                        <div
+                            className={`bg-black/50 backdrop-blur-xl rounded-2xl p-8 shadow-[0_32px_80px_rgba(0,0,0,0.6)] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] border transition-colors duration-500 ${
+                                isLuxury ? "border-[#D4AF37]/25" : "border-white/10"
+                            }`}
+                        >
+                            {/* Logo */}
+                            <div className="flex flex-col items-center mb-6">
+                                <img src={G4_LOGO} alt="G4 Car Services" className="h-8 w-auto object-contain mb-5" />
+                                <div className="w-10 h-px bg-gradient-to-r from-transparent via-[#D4AF37]/50 to-transparent" />
+                            </div>
+
+                            {/* Type badge — only when a type is selected */}
+                            {driverType && (
+                                <div className="flex justify-center mb-5">
+                                    <span
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] border ${
+                                            isLuxury
+                                                ? "border-[#D4AF37]/40 text-[#D4AF37] bg-[#D4AF37]/8"
+                                                : "border-white/15 text-gray-300 bg-white/5"
+                                        }`}
+                                    >
+                                        {isLuxury ? <Crown className="w-3 h-3" /> : <Car className="w-3 h-3" />}
+                                        {isLuxury ? "Luxury Driver" : "Standard Driver"}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Header */}
+                            <div className="text-center mb-7">
+                                <h1 className="text-xl font-bold text-white mb-2 tracking-tight">
+                                    {driverType ? "Continue Your Application" : "Welcome Back"}
+                                </h1>
+                                <p className="text-gray-500 text-sm leading-relaxed">
+                                    {driverType
+                                        ? "Sign in with Google to complete your registration"
+                                        : "Sign in to access your G4 driver account"}
+                                </p>
+                            </div>
+
+                            {/* Google button */}
+                            <button
+                                onClick={handleGoogleLogin}
+                                disabled={isLoading}
+                                className="w-full h-12 flex items-center justify-center gap-3 bg-white hover:bg-gray-50 active:scale-[0.98] text-zinc-900 font-semibold text-sm rounded-xl transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_2px_12px_rgba(0,0,0,0.4)]"
+                            >
+                                {isLoading
+                                    ? <Loader2 className="w-4 h-4 animate-spin text-zinc-500" />
+                                    : <GoogleIcon />
+                                }
+                                {isLoading ? "Verifying account..." : "Continue with Google"}
+                            </button>
+
+                            {/* Separator */}
+                            <div className="flex items-center gap-3 my-5">
+                                <div className="flex-1 border-t border-white/8" />
+                                <span className="text-[11px] text-gray-600 uppercase tracking-wider shrink-0">
+                                    {driverType ? "or" : "Not registered yet?"}
+                                </span>
+                                <div className="flex-1 border-t border-white/8" />
+                            </div>
+
+                            {/* Bottom action */}
+                            {driverType ? (
+                                /* With type: styled "change type" button */
+                                <button
+                                    onClick={() => navigate("/login")}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/8 text-gray-400 hover:text-white text-xs font-medium transition-all duration-200"
+                                >
+                                    <ArrowLeft className="w-3.5 h-3.5" />
+                                    Change driver type
+                                </button>
+                            ) : (
+                                /* Without type: two apply buttons */
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => handleSelection("luxury")}
+                                        className="group flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border border-[#D4AF37]/25 bg-[#D4AF37]/5 hover:border-[#D4AF37]/50 hover:bg-[#D4AF37]/10 transition-all duration-300"
+                                    >
+                                        <Crown className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                        <span className="text-[10px] font-semibold text-white">Luxury</span>
+                                        <span className="text-[9px] text-[#D4AF37]/60 uppercase tracking-wider">Apply</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleSelection("regular")}
+                                        className="group flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border border-white/10 bg-white/4 hover:border-white/20 hover:bg-white/8 transition-all duration-300"
+                                    >
+                                        <Car className="w-3.5 h-3.5 text-gray-400" />
+                                        <span className="text-[10px] font-semibold text-white">Standard</span>
+                                        <span className="text-[9px] text-gray-600 uppercase tracking-wider">Apply</span>
+                                    </button>
+                                </div>
+                            )}
+
+                            <p className="text-[10px] text-gray-700 text-center mt-5 leading-relaxed">
+                                By continuing, you agree to our Terms of Service and Privacy Policy.
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

@@ -9,7 +9,7 @@ export const GoldParticles = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        let particles: { x: number; y: number; size: number; speedX: number; speedY: number; alpha: number }[] = [];
+        const particles: { x: number; y: number; size: number; speedX: number; speedY: number; alpha: number }[] = [];
         let animationFrameId: number;
 
         const resize = () => {
