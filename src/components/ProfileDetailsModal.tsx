@@ -366,9 +366,17 @@ export const ProfileDetailsModal = ({ isOpen, onClose, application, onUpdate }: 
                 } else if (vehicles.length > 0) {
                     // Vehicle document — use the first active vehicle
                     const activeVehicle = vehicles.find(v => v.status === "active") || vehicles[0];
-                    const vehicleDocType = editingDoc as "car_registration" | "vehicle_inspection" | "tlc_diamond" | "insurance_files" | "vehicle_photos";
+                    // Map array keys (vehicle_photo_0, insurance_1) to their base type
+                    let vehicleDocType: "car_registration" | "vehicle_inspection" | "tlc_diamond" | "insurance_files" | "vehicle_photos";
+                    if (editingDoc.startsWith("vehicle_photo_")) {
+                        vehicleDocType = "vehicle_photos";
+                    } else if (editingDoc.startsWith("insurance_")) {
+                        vehicleDocType = "insurance_files";
+                    } else {
+                        vehicleDocType = editingDoc as "car_registration" | "vehicle_inspection" | "tlc_diamond";
+                    }
                     await dashboardService.updateVehicleDocument(activeVehicle.id, vehicleDocType, file);
-                    toast.success(`${editingDoc.replace(/_/g, " ")} updated successfully`);
+                    toast.success(`${vehicleDocType.replace(/_/g, " ")} updated successfully`);
                 }
 
                 setEditingDoc(null);

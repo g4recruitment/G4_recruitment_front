@@ -101,7 +101,7 @@ export const dashboardService = {
     },
 
     updateProfile: async (payload: UpdateProfilePayload): Promise<{ status: string }> => {
-        const { data } = await api.patch("/user/profile", payload);
+        const { data } = await api.put("/user/profile", payload);
         return data;
     },
 
@@ -126,7 +126,7 @@ export const dashboardService = {
         id: string,
         payload: UpdateVehiclePayload
     ): Promise<Vehicle> => {
-        const { data } = await api.patch(`/user/vehicles/${id}`, payload);
+        const { data } = await api.put(`/user/vehicles/${id}`, payload);
         return data;
     },
 
