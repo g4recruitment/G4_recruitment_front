@@ -137,7 +137,7 @@ function EditableInfoRow({
             </div>
             <button
                 onClick={() => onStartEdit(field)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-600 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all opacity-0 group-hover:opacity-100 shrink-0 mt-0.5"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-600 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all shrink-0 mt-0.5"
                 title={`Edit ${label}`}
             >
                 <Pencil className="w-3.5 h-3.5" />
@@ -254,7 +254,7 @@ function EditableDocCard({
             </button>
             <button
                 onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] opacity-0 group-hover:opacity-100 transition-all hover:bg-[#D4AF37]/20 z-10"
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] transition-all hover:bg-[#D4AF37]/20 z-10"
                 title={`Edit ${label}`}
             >
                 <Pencil className="w-3 h-3" />
