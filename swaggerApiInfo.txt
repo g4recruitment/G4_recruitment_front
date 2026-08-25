@@ -1,0 +1,703 @@
+PUT
+/user/documents/{type}
+Replace Driver Document
+
+
+Replaces one of the driver's own documents (driver_license, tlc_license, profile_photo)
+
+Parameters
+Try it out
+Name	Description
+type *
+string
+(path)
+Document type (driver_license, tlc_license, profile_photo)
+
+type
+file *
+file
+(formData)
+New file
+
+Sin archivos seleccionados
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "additionalProp1": "string",
+  "additionalProp2": "string",
+  "additionalProp3": "string"
+}
+400	
+Bad Request
+
+Example Value
+Model
+"string"
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+No driver application found
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
+GET
+/user/me
+Get My Profile
+
+
+Get current user profile and application status
+
+Parameters
+Try it out
+No parameters
+
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "application": {
+    "additional_info": {
+      "additionalProp1": {}
+    },
+    "address": "string",
+    "car_registration_url": "string",
+    "created_at": "string",
+    "device_type": "string",
+    "driver_category": "string",
+    "driver_license_url": "string",
+    "emergency_number": "string",
+    "full_name": "string",
+    "id": "string",
+    "insurance_files_urls": [
+      "string"
+    ],
+    "passenger_capacity": 0,
+    "phone_number": "string",
+    "profile_photo_url": "string",
+    "status": "string",
+    "tlc_diamond_url": "string",
+    "tlc_license_url": "string",
+    "user_id": "string",
+    "vehicle_category": "string",
+    "vehicle_inspection_url": "string",
+    "vehicle_photos_urls": [
+      "string"
+    ],
+    "vehicle_type": "string",
+    "vehicles": [
+      {
+        "application_id": "string",
+        "archived_at": "string",
+        "car_registration_url": "string",
+        "created_at": "string",
+        "driver_category": "string",
+        "id": "string",
+        "insurance_files_urls": [
+          "string"
+        ],
+        "passenger_capacity": 0,
+        "slot": 0,
+        "status": "string",
+        "tlc_diamond_url": "string",
+        "updated_at": "string",
+        "vehicle_inspection_url": "string",
+        "vehicle_photos_urls": [
+          "string"
+        ],
+        "vehicle_type": "string"
+      }
+    ]
+  },
+  "avatar_url": "string",
+  "email": "string",
+  "id": "string",
+  "referral_code": "string",
+  "referred_by": "string",
+  "role": "string"
+}
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+User not found
+
+Example Value
+Model
+"string"
+
+PUT
+/user/profile
+Update My Profile
+
+
+Update driver personal info (name, phone, address, emergency contact, device), avatar or referral code
+
+Parameters
+Try it out
+Name	Description
+request *
+object
+(body)
+Update Data
+
+Example Value
+Model
+{
+  "address": "string",
+  "avatar_url": "string",
+  "device_type": "string",
+  "emergency_number": "string",
+  "full_name": "string",
+  "phone_number": "string",
+  "referral_code": "string"
+}
+Parameter content type
+
+application/json
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+{"status":"updated"}
+
+Example Value
+Model
+"string"
+400	
+Invalid Body
+
+Example Value
+Model
+"string"
+409	
+Conflict (Already referred)
+
+Example Value
+Model
+"string"
+500	
+Server Error
+
+Example Value
+Model
+"string"
+
+PATCH
+/user/profile
+Update My Profile
+
+
+Update driver personal info (name, phone, address, emergency contact, device), avatar or referral code
+
+Parameters
+Try it out
+Name	Description
+request *
+object
+(body)
+Update Data
+
+Example Value
+Model
+{
+  "address": "string",
+  "avatar_url": "string",
+  "device_type": "string",
+  "emergency_number": "string",
+  "full_name": "string",
+  "phone_number": "string",
+  "referral_code": "string"
+}
+Parameter content type
+
+application/json
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+{"status":"updated"}
+
+Example Value
+Model
+"string"
+400	
+Invalid Body
+
+Example Value
+Model
+"string"
+409	
+Conflict (Already referred)
+
+Example Value
+Model
+"string"
+500	
+Server Error
+
+Example Value
+Model
+"string"
+
+
+vehicles
+
+
+GET
+/user/vehicles
+List My Vehicles
+
+
+Returns the driver's vehicles, active ones first, then archived
+
+Parameters
+Try it out
+No parameters
+
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "active_count": 0,
+  "max_active": 0,
+  "vehicles": [
+    {
+      "application_id": "string",
+      "archived_at": "string",
+      "car_registration_url": "string",
+      "created_at": "string",
+      "driver_category": "string",
+      "id": "string",
+      "insurance_files_urls": [
+        "string"
+      ],
+      "passenger_capacity": 0,
+      "slot": 0,
+      "status": "string",
+      "tlc_diamond_url": "string",
+      "updated_at": "string",
+      "vehicle_inspection_url": "string",
+      "vehicle_photos_urls": [
+        "string"
+      ],
+      "vehicle_type": "string"
+    }
+  ]
+}
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+No driver application found
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
+POST
+/user/vehicles
+Add Vehicle
+
+
+Adds a vehicle to the driver's account (max 3 active)
+
+Parameters
+Try it out
+Name	Description
+vehicle_type *
+string
+(formData)
+Vehicle Type
+
+vehicle_type
+passenger_capacity *
+integer
+(formData)
+Passenger Capacity
+
+passenger_capacity
+driver_category *
+string
+(formData)
+Category (comfort/luxury)
+
+driver_category
+car_registration *
+file
+(formData)
+Car Registration
+
+Sin archivos seleccionados
+vehicle_inspection *
+file
+(formData)
+Vehicle Inspection
+
+Sin archivos seleccionados
+tlc_diamond *
+file
+(formData)
+TLC Diamond
+
+Sin archivos seleccionados
+insurance_files *
+file
+(formData)
+Insurance Files (Array)
+
+Sin archivos seleccionados
+vehicle_photos *
+file
+(formData)
+Vehicle Photos (Array)
+
+Sin archivos seleccionados
+Responses
+Response content type
+
+application/json
+Code	Description
+201	
+Created
+
+Example Value
+Model
+{
+  "application_id": "string",
+  "archived_at": "string",
+  "car_registration_url": "string",
+  "created_at": "string",
+  "driver_category": "string",
+  "id": "string",
+  "insurance_files_urls": [
+    "string"
+  ],
+  "passenger_capacity": 0,
+  "slot": 0,
+  "status": "string",
+  "tlc_diamond_url": "string",
+  "updated_at": "string",
+  "vehicle_inspection_url": "string",
+  "vehicle_photos_urls": [
+    "string"
+  ],
+  "vehicle_type": "string"
+}
+400	
+Bad Request
+
+Example Value
+Model
+"string"
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+409	
+Maximum of 3 active vehicles reached
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
+DELETE
+/user/vehicles/{id}
+Archive Vehicle
+
+
+Archives a vehicle (soft delete). Its documents stay in Storage. Cannot archive the only active vehicle.
+
+Parameters
+Try it out
+Name	Description
+id *
+string
+(path)
+Vehicle ID
+
+id
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "application_id": "string",
+  "archived_at": "string",
+  "car_registration_url": "string",
+  "created_at": "string",
+  "driver_category": "string",
+  "id": "string",
+  "insurance_files_urls": [
+    "string"
+  ],
+  "passenger_capacity": 0,
+  "slot": 0,
+  "status": "string",
+  "tlc_diamond_url": "string",
+  "updated_at": "string",
+  "vehicle_inspection_url": "string",
+  "vehicle_photos_urls": [
+    "string"
+  ],
+  "vehicle_type": "string"
+}
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+Vehicle not found
+
+Example Value
+Model
+"string"
+409	
+Cannot archive your only active vehicle
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
+PATCH
+/user/vehicles/{id}
+Update Vehicle
+
+
+Updates the text fields of a vehicle. Changing driver_category re-categorizes the driver.
+
+Parameters
+Try it out
+Name	Description
+id *
+string
+(path)
+Vehicle ID
+
+id
+request *
+object
+(body)
+Fields to update
+
+Example Value
+Model
+{
+  "driver_category": "string",
+  "passenger_capacity": 0,
+  "vehicle_type": "string"
+}
+Parameter content type
+
+application/json
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "application_id": "string",
+  "archived_at": "string",
+  "car_registration_url": "string",
+  "created_at": "string",
+  "driver_category": "string",
+  "id": "string",
+  "insurance_files_urls": [
+    "string"
+  ],
+  "passenger_capacity": 0,
+  "slot": 0,
+  "status": "string",
+  "tlc_diamond_url": "string",
+  "updated_at": "string",
+  "vehicle_inspection_url": "string",
+  "vehicle_photos_urls": [
+    "string"
+  ],
+  "vehicle_type": "string"
+}
+400	
+Bad Request
+
+Example Value
+Model
+"string"
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+Vehicle not found
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
+PUT
+/user/vehicles/{id}/documents/{type}
+Replace Vehicle Document
+
+
+Replaces one document of a vehicle. For array types (insurance_files, vehicle_photos) the whole set is replaced.
+
+Parameters
+Try it out
+Name	Description
+id *
+string
+(path)
+Vehicle ID
+
+id
+type *
+string
+(path)
+Document type (car_registration, vehicle_inspection, tlc_diamond, insurance_files, vehicle_photos)
+
+type
+file *
+file
+(formData)
+New file(s)
+
+Sin archivos seleccionados
+Responses
+Response content type
+
+application/json
+Code	Description
+200	
+OK
+
+Example Value
+Model
+{
+  "application_id": "string",
+  "archived_at": "string",
+  "car_registration_url": "string",
+  "created_at": "string",
+  "driver_category": "string",
+  "id": "string",
+  "insurance_files_urls": [
+    "string"
+  ],
+  "passenger_capacity": 0,
+  "slot": 0,
+  "status": "string",
+  "tlc_diamond_url": "string",
+  "updated_at": "string",
+  "vehicle_inspection_url": "string",
+  "vehicle_photos_urls": [
+    "string"
+  ],
+  "vehicle_type": "string"
+}
+400	
+Bad Request
+
+Example Value
+Model
+"string"
+401	
+Unauthorized
+
+Example Value
+Model
+"string"
+404	
+Vehicle not found
+
+Example Value
+Model
+"string"
+500	
+Internal Server Error
+
+Example Value
+Model
+"string"
+
