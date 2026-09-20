@@ -50,7 +50,11 @@ dashboard devuelven campos distintos.
 
 ## API
 
-Base: `VITE_API_URL` (+ `/api` que agrega `lib/api.ts`). Endpoints usados:
+Base: `VITE_API_URL`, normalizada por `resolveBaseURL()` en `lib/api.ts`, que
+garantiza un único `/api` final (el backend responde en `<host>/api/...`: un GET
+a `/api/user/me` da 401 y a `/api/api/user/me` da 404). El valor canónico va
+**sin** `/api` — ver `.env.example` — pero con sufijo o barra de más funciona
+igual. Endpoints usados:
 
 - `GET /user/me` — perfil + rol + aplicación (`exists` = hay application con id real)
 - `GET /user/dashboard?page&limit` — perfil, referidos paginados, aplicación

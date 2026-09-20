@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { InternalAxiosRequestConfig } from "axios";
 import { AxiosError } from "axios";
 import { supabase } from "./supabase";
-import { api } from "./api";
+import { api, resolveBaseURL } from "./api";
 
 vi.mock("./supabase", () => ({
     supabase: { auth: { getSession: vi.fn() } },
@@ -29,6 +29,29 @@ const httpError = (status: number) =>
 
 beforeEach(() => {
     getSession.mockReset();
+});
+
+describe("resolveBaseURL", () => {
+    // The real backend answers on /api (a probe of /api/user/me returns 401,
+    // while /api/api/user/me and /user/me both 404), so every form below has to
+    // land on exactly one /api.
+    it.each([
+        ["https://g4-recruitment-api.onrender.com", "https://g4-recruitment-api.onrender.com/api"],
+        ["https://g4-recruitment-api.onrender.com/", "https://g4-recruitment-api.onrender.com/api"],
+        ["https://g4-recruitment-api.onrender.com/api", "https://g4-recruitment-api.onrender.com/api"],
+        ["https://g4-recruitment-api.onrender.com/api/", "https://g4-recruitment-api.onrender.com/api"],
+        ["  https://g4-recruitment-api.onrender.com/api  ", "https://g4-recruitment-api.onrender.com/api"],
+    ])("normalizes %s", (raw, expected) => {
+        expect(resolveBaseURL(raw)).toBe(expected);
+    });
+
+    it.each([undefined, "", "   "])("falls back to localhost for %o", (raw) => {
+        expect(resolveBaseURL(raw)).toBe("http://localhost:8080/api");
+    });
+
+    it("configures the shared client with the normalized URL", () => {
+        expect(api.defaults.baseURL).toBe("https://api.test/api");
+    });
 });
 
 describe("api request interceptor", () => {
