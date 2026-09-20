@@ -137,7 +137,7 @@ function EditableInfoRow({
             </div>
             <button
                 onClick={() => onStartEdit(field)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-600 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all shrink-0 mt-0.5"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all shrink-0 mt-0.5"
                 title={`Edit ${label}`}
             >
                 <Pencil className="w-3.5 h-3.5" />

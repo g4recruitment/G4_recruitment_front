@@ -14,6 +14,10 @@ import { visionService } from "@/services/vision.service";
 import { api } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import { ASSETS } from "@/lib/assets";
+import {
+    VEHICLE_PHOTO_SLOTS, VEHICLE_PHOTO_LABELS, vehiclePhotoTargets, applyVehiclePhotos,
+    nextVehicleSlot, isVehiclePhotoSetComplete, type VehiclePhotoEntry,
+} from "@/lib/vehiclePhotos";
 import { AxiosError } from "axios";
 import {
     HoverCard,
@@ -193,7 +197,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
     const [extractedPlate, setExtractedPlate] = useState<string | null>(null);
 
     // --- ESTADOS MULTI-CÁMARA (Fotos del vehículo) ---
-    const [vehicleCameraPhotos, setVehicleCameraPhotos] = useState<(string | null)[]>([null, null, null, null]);
+    const [vehicleCameraPhotos, setVehicleCameraPhotos] = useState<(string | null)[]>(Array(VEHICLE_PHOTO_SLOTS).fill(null));
     const [vehicleCameraStep, setVehicleCameraStep] = useState(0);
     const [isVehicleCameraOpen, setIsVehicleCameraOpen] = useState(false);
     const [vehicleCapturedPreview, setVehicleCapturedPreview] = useState<string | null>(null);
@@ -512,8 +516,6 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
     };
 
     // --- MULTI-CÁMARA LOGIC (Vehicle Photos) ---
-    const VEHICLE_PHOTO_LABELS = ['Front / Frente', 'Back / Atrás', 'Left Side / Lado Izquierdo', 'Right Side / Lado Derecho'];
-
     const startVehicleCamera = async () => {
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -543,53 +545,59 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
         setIsVehicleCameraOpen(false);
     };
 
-    const confirmVehiclePhoto = () => {
-        if (!vehicleCapturedPreview) return;
-        const updated = [...vehicleCameraPhotos];
-        updated[vehicleCameraStep] = vehicleCapturedPreview;
+    // Writes one or more photos into their slots. Uploads commit straight through
+    // here (no preview step), so picking several files accumulates instead of
+    // overwriting the shared preview buffer. formData keeps the "all 4 or nothing"
+    // contract that handleNext validates.
+    const commitVehiclePhotos = (entries: VehiclePhotoEntry[]) => {
+        if (entries.length === 0) return;
+
+        const updated = applyVehiclePhotos(vehicleCameraPhotos, entries);
         setVehicleCameraPhotos(updated);
         setVehicleCapturedPreview(null);
 
-        // Auto-advance to next empty slot
-        const nextEmpty = updated.findIndex((p, i) => i > vehicleCameraStep && !p);
-        if (nextEmpty !== -1) {
-            setVehicleCameraStep(nextEmpty);
+        // Focus the next empty slot (Front → Back → Left → Right)
+        setVehicleCameraStep(nextVehicleSlot(updated, entries[entries.length - 1].index));
+
+        if (isVehiclePhotoSetComplete(updated)) {
+            setFormData(prev => ({ ...prev, vehiclePhotos: updated }));
+            toast.success("All 4 vehicle photos captured!");
         } else {
-            // All filled, check if there's any empty slot at all
-            const anyEmpty = updated.findIndex(p => !p);
-            if (anyEmpty !== -1) {
-                setVehicleCameraStep(anyEmpty);
-            }
-            // If all 4 are filled, save to formData
-            if (updated.every(p => p !== null)) {
-                setFormData(prev => ({ ...prev, vehiclePhotos: updated }));
-                toast.success("All 4 vehicle photos captured!");
-            }
+            setFormData(prev => (prev.vehiclePhotos ? { ...prev, vehiclePhotos: undefined } : prev));
         }
     };
 
+    const confirmVehiclePhoto = () => {
+        if (!vehicleCapturedPreview) return;
+        commitVehiclePhotos([{ index: vehicleCameraStep, dataUrl: vehicleCapturedPreview }]);
+    };
+
+    // Targets a slot for replacement. The existing photo stays until a new one is
+    // committed, so an accidental tap on a thumbnail can't wipe it.
     const retakeVehiclePhoto = (index: number) => {
         setVehicleCameraStep(index);
         setVehicleCapturedPreview(null);
-        // Clear that slot
-        const updated = [...vehicleCameraPhotos];
-        updated[index] = null;
-        setVehicleCameraPhotos(updated);
-        // Clear formData since we no longer have all 4
-        setFormData(prev => ({ ...prev, vehiclePhotos: undefined }));
     };
 
-    const handleVehicleFileUpload = (file: File) => {
-        if (file.size > 5 * 1024 * 1024) {
-            toast.error("File size exceeds 5MB limit.");
-            return;
+    const handleVehicleFileUpload = async (files: File[]) => {
+        // Fill the selected slot first, then the remaining empty ones, so picking
+        // 4 images at once lands them as Front, Back, Left, Right.
+        const targets = vehiclePhotoTargets(vehicleCameraPhotos, vehicleCameraStep);
+
+        const entries: VehiclePhotoEntry[] = [];
+        for (const file of files) {
+            if (entries.length >= targets.length) {
+                toast.error("Only 4 photos are needed: Front, Back, Left Side and Right Side.");
+                break;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error(`${file.name} exceeds the 5MB limit.`);
+                continue;
+            }
+            entries.push({ index: targets[entries.length], dataUrl: await fileToBase64(file) });
         }
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const imageData = event.target?.result as string;
-            setVehicleCapturedPreview(imageData);
-        };
-        reader.readAsDataURL(file);
+
+        commitVehiclePhotos(entries);
     };
 
     const handleNext = () => {
@@ -601,7 +609,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
 
             // Validación multi-cámara (vehicle photos)
             if (currentQ.useMultiCamera) {
-                const allCaptured = vehicleCameraPhotos.every(p => p !== null);
+                const allCaptured = isVehiclePhotoSetComplete(vehicleCameraPhotos);
                 if (!allCaptured) {
                     const missing = vehicleCameraPhotos.filter(p => !p).length;
                     toast.error(`Please capture all 4 vehicle photos. ${missing} remaining.`);
@@ -867,7 +875,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                     </div>
 
                     {/* Camera / Preview Area */}
-                    {!allCaptured || vehicleCapturedPreview ? (
+                    {!allCaptured || vehicleCapturedPreview || isVehicleCameraOpen ? (
                         <div className={`relative mx-auto w-full max-w-sm aspect-video bg-black rounded-xl overflow-hidden shadow-lg border-2 ${type === 'luxury' ? 'border-accent/30' : 'border-blue-500/30'}`}>
                             {/* Live Camera */}
                             {isVehicleCameraOpen && !vehicleCapturedPreview && (
@@ -885,8 +893,13 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                                 <img src={vehicleCapturedPreview} alt="Captured" className="w-full h-full object-cover" />
                             )}
 
+                            {/* Photo already in the selected slot (about to be replaced) */}
+                            {!isVehicleCameraOpen && !vehicleCapturedPreview && vehicleCameraPhotos[vehicleCameraStep] && (
+                                <img src={vehicleCameraPhotos[vehicleCameraStep]!} alt={currentLabel} className="w-full h-full object-cover" />
+                            )}
+
                             {/* Placeholder */}
-                            {!isVehicleCameraOpen && !vehicleCapturedPreview && (
+                            {!isVehicleCameraOpen && !vehicleCapturedPreview && !vehicleCameraPhotos[vehicleCameraStep] && (
                                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                                     <Camera className="w-12 h-12 mb-2 opacity-50" />
                                     <p className="text-sm">Take photo: {currentLabel}</p>
@@ -899,8 +912,9 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
 
                     {/* Controls */}
                     <div className="flex flex-col gap-3 max-w-sm mx-auto">
-                        {/* Start Camera */}
-                        {!isVehicleCameraOpen && !vehicleCapturedPreview && !vehicleCameraPhotos[vehicleCameraStep] && (
+                        {/* Start Camera / Upload — stays available so the selected slot
+                            can be filled or replaced at any point */}
+                        {!isVehicleCameraOpen && !vehicleCapturedPreview && (
                             <>
                                 <Button onClick={startVehicleCamera} size="lg" className="w-full">
                                     <Camera className="mr-2 w-5 h-5" /> Open Camera
@@ -924,16 +938,19 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                                         asChild
                                     >
                                         <span>
-                                            <Upload className="mr-2 w-5 h-5" /> Upload Image
+                                            <Upload className="mr-2 w-5 h-5" /> Upload Images
                                         </span>
                                     </Button>
                                     <input
                                         type="file"
                                         accept="image/*"
+                                        multiple
                                         className="hidden"
                                         onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) handleVehicleFileUpload(file);
+                                            const files = Array.from(e.target.files ?? []);
+                                            // Reset so the same file can be picked again
+                                            e.target.value = "";
+                                            if (files.length > 0) handleVehicleFileUpload(files);
                                         }}
                                     />
                                 </label>
@@ -1397,7 +1414,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
                 const val = formData[q.id];
 
                 if (q.useMultiCamera) {
-                    if (!vehicleCameraPhotos.every(p => p !== null)) {
+                    if (!isVehiclePhotoSetComplete(vehicleCameraPhotos)) {
                         toast.error(`Please capture all 4 vehicle photos.`);
                         return;
                     }
@@ -1448,7 +1465,7 @@ const RegisterDriver = ({ type }: RegisterDriverProps) => {
         };
 
         const answeredCount = filteredQuestions.filter(q => {
-            if (q.useMultiCamera) return vehicleCameraPhotos.every(p => p !== null);
+            if (q.useMultiCamera) return isVehiclePhotoSetComplete(vehicleCameraPhotos);
             if (q.useCamera) return !!formData[q.id] || !!capturedImage;
             return !!formData[q.id];
         }).length;
